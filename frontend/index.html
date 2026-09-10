@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hyper-Local Heatwave Early Warning & Human Thermal Stress Platform</title>
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <!-- Top Command Header -->
+  <header>
+    <div class="header-inner">
+      <div class="brand">
+        <div class="status-indicator live-pulse"></div>
+        <div>
+          <h1>Hyper-Local Heatwave & Human Thermal Stress Index (HTSI)</h1>
+          <p id="region-subtitle">National Capital Territory of Delhi &#8226; Biometeorological &amp; Epidemiological Early Warning Engine</p>
+        </div>
+      </div>
+
+      <div class="header-actions">
+        <!-- Live Geolocation Bar -->
+        <div class="location-bar" role="status" aria-live="polite">
+          <button id="detect-location-btn" class="btn-location" type="button" title="Use browser GPS to center forecast on your device">
+            <span class="icon">&#128205;</span> Detect My Current Location
+          </button>
+          <div id="location-pill" class="location-pill" title="Reverse-geocoded device locality">
+            <span class="pill-dot" id="location-dot"></span>
+            <span id="location-label">Locating&hellip; &bull; Delhi default (28.6139, 77.2090)</span>
+          </div>
+        </div>
+        <!-- Dual-Mode Switcher Tabs -->
+        <div class="mode-tabs" role="tablist">
+          <button id="tab-mode-forecast" class="mode-tab active" data-mode="forecast">
+            <span class="icon">&#128506;</span> Mode A: Live 5-Day GIS Forecast
+          </button>
+          <button id="tab-mode-simulator" class="mode-tab" data-mode="simulator">
+            <span class="icon">&#9881;</span> Mode B: Thermal Stress Simulator
+          </button>
+        </div>
+
+        <button id="dispatch-alert-btn" class="btn-alert">
+          <span class="icon">&#9888;</span> Broadcast Emergency Alerts
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Mode A: Timeline Scrubber Section -->
+  <section id="forecast-scrubber-panel" class="timeline-bar">
+    <div class="timeline-meta">
+      <div class="timeline-info">
+        <label for="timeline-slider">
+          5-Day Predictive Scrubber (3-Hour Intervals):
+          <strong id="current-time-label">Loading live Open-Meteo forecast...</strong>
+        </label>
+      </div>
+      <div class="timeline-live-weather">
+        <span class="weather-chip">&#127777; <span id="fw-temp">--</span>°C</span>
+        <span class="weather-chip">&#128167; <span id="fw-rh">--</span>% RH</span>
+        <span class="weather-chip">&#128168; <span id="fw-wind">--</span> m/s</span>
+        <span class="weather-chip">&#9728; <span id="fw-solar">--</span> W/m²</span>
+      </div>
+    </div>
+    <div class="slider-wrapper">
+      <input type="range" id="timeline-slider" min="0" max="39" value="0" step="1" aria-label="Forecast Timeline Slider" />
+      <div class="timeline-ticks">
+        <span>Day 1</span>
+        <span>Day 2</span>
+        <span>Day 3</span>
+        <span>Day 4</span>
+        <span>Day 5</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- Main Execution Layout -->
+  <main class="grid-container">
+    
+    <!-- LEFT PANEL: Dynamic Toggle Container (Map vs Simulator Controls) -->
+    <div class="left-panel">
+      
+      <!-- MODE A CONTAINER: Leaflet GIS Map -->
+      <section id="mode-a-container" class="card map-card active-mode-container">
+        <div class="map-header">
+          <div>
+            <h2>Municipal Ward Vulnerability Heatmap</h2>
+            <p class="panel-subtitle">Click on any ward polygon to inspect localized epidemiological load</p>
+          </div>
+          <div class="legend">
+            <span><i style="background: #22c55e"></i> &lt;40 Safe</span>
+            <span><i style="background: #eab308"></i> 40-60 Moderate</span>
+            <span><i style="background: #f97316"></i> 60-75 Severe</span>
+            <span><i style="background: #ef4444"></i> &gt;75 Critical</span>
+          </div>
+        </div>
+        <div id="map"></div>
+      </section>
+
+      <!-- MODE B CONTAINER: Acute Thermal Stress Simulator Controls -->
+      <section id="mode-b-container" class="card simulator-card hidden">
+        <div class="simulator-header">
+          <div>
+            <h2>Human Thermal Stress Simulator (Direct Exposure Thresholds)</h2>
+            <p class="panel-subtitle">Personal physiological profiling &amp; micro-climate adjustments with sub-16ms reactive calculation</p>
+          </div>
+          <div class="engine-badge">Deterministic Biometeorology</div>
+        </div>
+        <!-- Quick Persona Presets -->
+        <div class="preset-container">
+          <span class="preset-label">Quick Occupational &amp; Vulnerability Presets:</span>
+          <div class="preset-chips">
+            <button type="button" class="btn-preset" data-preset="construction">👷 Construction Laborer</button>
+            <button type="button" class="btn-preset" data-preset="delivery">🛵 Gig / Delivery Rider</button>
+            <button type="button" class="btn-preset" data-preset="elderly">👵 Elderly Resident (Indoor)</button>
+            <button type="button" class="btn-preset" data-preset="farmer">🌾 Agricultural Worker</button>
+          </div>
+        </div>
+
+        <!-- Section 1: Exposure Environment (Outdoor vs Indoor/Shaded) -->
+        <div class="exposure-type-bar">
+          <label class="section-label">Exposure Environment &amp; Radiative Context:</label>
+          <div class="env-toggle-group">
+            <button type="button" class="env-btn active" id="btn-env-outdoor" data-env="outdoor">
+              <span class="icon">&#9728;</span> Outdoor (Direct Solar &amp; Wind Convection)
+            </button>
+            <button type="button" class="env-btn" id="btn-env-indoor" data-env="indoor">
+              <span class="icon">&#127968;</span> Indoor / Shaded (No Direct Solar Radiation)
+            </button>
+          </div>
+        </div>
+
+        <!-- Section 2: Personal Physiological Vulnerability Profiling -->
+        <div class="personal-vulnerability-card">
+          <div class="card-subtitle-row">
+            <span class="icon">&#128100;</span>
+            <h3>Personal Physiological &amp; Metabolic Profile</h3>
+          </div>
+          <div class="personal-grid">
+            <!-- Age Input -->
+            <div class="personal-item">
+              <label for="sim-age">Individual Age (Years):</label>
+              <div class="input-with-badge">
+                <input type="number" id="sim-age" min="1" max="115" value="30" class="styled-num-input" />
+                <span id="age-badge" class="profile-badge">Standard Adult</span>
+              </div>
+              <small class="hint-text">&gt;65 or &lt;12 adds +15% physiological sensitivity</small>
+            </div>
+
+            <!-- Health Conditions Toggle -->
+            <div class="personal-item">
+              <label>Pre-Existing Health Condition:</label>
+              <div class="toggle-wrap">
+                <label class="switch">
+                  <input type="checkbox" id="sim-condition" />
+                  <span class="slider-round"></span>
+                </label>
+                <span id="condition-label" class="toggle-text">None Reported</span>
+              </div>
+              <small class="hint-text">Cardiovascular, Respiratory, or Diabetes adds +20% risk</small>
+            </div>
+
+            <!-- Physical Activity Level -->
+            <div class="personal-item full-width">
+              <label>Physical Metabolic Activity Level:</label>
+              <div class="activity-chips-group">
+                <button type="button" class="act-chip active" data-activity="light">
+                  <strong>Light (1.0x)</strong> &bull; Resting / Sitting / Desk
+                </button>
+                <button type="button" class="act-chip" data-activity="moderate">
+                  <strong>Moderate (1.10x)</strong> &bull; Walking / Light Labor
+                </button>
+                <button type="button" class="act-chip" data-activity="heavy">
+                  <strong>Heavy (1.15x)</strong> &bull; Construction / Manual Labor
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Section 3: Micro-Climate Parameter Sliders -->
+        <div class="weather-source-row">
+          <span class="weather-source-label">Weather Data Source:</span>
+          <div class="weather-source-btns">
+            <button id="btn-sync-live-weather" class="btn-toggle active" type="button">Sync Live Weather (Live)</button>
+            <button id="btn-custom-weather" class="btn-toggle" type="button">Manual Override</button>
+          </div>
+        </div>
+        <div class="controls-grid">
+          
+          <!-- Control 1: Ambient Air Temperature -->
+          <div class="control-card">
+            <div class="control-label-row">
+              <label for="slider-ta">Ambient Air Temperature (Ta)</label>
+              <span class="slider-val-badge"><span id="val-ta">42.0</span> °C</span>
+            </div>
+            <input type="range" id="slider-ta" min="20.0" max="52.0" step="0.5" value="42.0" class="styled-slider temp-slider" />
+            <div class="slider-bounds"><span>20.0°C</span><span>36.0°C</span><span>52.0°C</span></div>
+          </div>
+
+          <!-- Control 2: Relative Humidity -->
+          <div class="control-card">
+            <div class="control-label-row">
+              <label for="slider-rh">Relative Humidity (RH)</label>
+              <span class="slider-val-badge"><span id="val-rh">55</span> %</span>
+            </div>
+            <input type="range" id="slider-rh" min="10" max="100" step="1" value="55" class="styled-slider humidity-slider" />
+            <div class="slider-bounds"><span>10% (Arid)</span><span>50%</span><span>100% (Saturated)</span></div>
+          </div>
+
+          <!-- Control 3: Wind Speed -->
+          <div class="control-card">
+            <div class="control-label-row">
+              <label for="slider-va">Wind Speed (va at 10m)</label>
+              <span class="slider-val-badge"><span id="val-va">1.5</span> m/s</span>
+            </div>
+            <input type="range" id="slider-va" min="0.1" max="10.0" step="0.1" value="1.5" class="styled-slider wind-slider" />
+            <div class="slider-bounds"><span>0.1 m/s (Stagnant)</span><span>5.0 m/s</span><span>10.0 m/s (Breezy)</span></div>
+          </div>
+
+          <!-- Control 4: Solar Irradiance -->
+          <div class="control-card" id="solar-control-card">
+            <div class="control-label-row">
+              <label for="slider-solar">Solar Irradiance (DNI)</label>
+              <span class="slider-val-badge"><span id="val-solar">800</span> W/m²</span>
+            </div>
+            <input type="range" id="slider-solar" min="0" max="1100" step="50" value="800" class="styled-slider solar-slider" />
+            <div class="slider-bounds"><span>0 (Night/Shade)</span><span>500 (Overcast)</span><span>1100 W/m² (Zenith)</span></div>
+          </div>
+
+        </div>
+
+        <!-- Exposure Duration Chips -->
+        <div class="chips-section">
+          <label class="section-label">Continuous Exposure Duration Threshold (t):</label>
+          <div class="chips-group" id="duration-chips" role="radiogroup">
+            <button type="button" class="duration-chip" data-hours="0.25">15 min</button>
+            <button type="button" class="duration-chip" data-hours="0.5">30 min</button>
+            <button type="button" class="duration-chip" data-hours="1.0">1 hr</button>
+            <button type="button" class="duration-chip" data-hours="2.0">2 hr</button>
+            <button type="button" class="duration-chip active" data-hours="4.0">4 hr</button>
+            <button type="button" class="duration-chip" data-hours="6.0">6 hr</button>
+            <button type="button" class="duration-chip" data-hours="8.0">8 hr</button>
+            <button type="button" class="duration-chip" data-hours="10.0">10 hr</button>
+            <button type="button" class="duration-chip" data-hours="12.0">12 hr</button>
+          </div>
+        </div>
+
+        <!-- Optional Demographic Baseline Reference -->
+        <div class="demographic-preset-bar">
+          <div class="preset-col">
+            <label for="target-ward-select">Geographical Ward Reference (Optional):</label>
+            <select id="target-ward-select" class="styled-select">
+              <option value="W01">W01 - Old Delhi (High Vulnerability / Low NDVI)</option>
+              <option value="W02">W02 - Chanakyapuri (High Canopy / Low Labor)</option>
+              <option value="W03">W03 - Okhla Industrial (55% Labor / Low NDVI)</option>
+              <option value="W04">W04 - Rohini Sector 10 (Suburban / Moderate NDVI)</option>
+              <option value="W05">W05 - Connaught Place (Transit Hub / Dense)</option>
+              <option value="W06">W06 - Dwarka Sector 12 (Planned Residential)</option>
+              <option value="custom">Custom Regional Cohort</option>
+            </select>
+          </div>
+
+          <div class="custom-demographics-row" id="custom-demographics-container" style="display: none;">
+            <div>
+              <label for="custom-elderly">Elderly (&gt;65)%:</label>
+              <input type="number" id="custom-elderly" value="14.5" min="0" max="100" step="0.5" />
+            </div>
+            <div>
+              <label for="custom-labor">Outdoor Labor%:</label>
+              <input type="number" id="custom-labor" value="42.0" min="0" max="100" step="0.5" />
+            </div>
+            <div>
+              <label for="custom-ndvi">NDVI Canopy (0-1):</label>
+              <input type="number" id="custom-ndvi" value="0.15" min="0" max="1.0" step="0.05" />
+            </div>
+            <div>
+              <label for="custom-pop">Population:</label>
+              <input type="number" id="custom-pop" value="125000" min="1000" step="5000" />
+            </div>
+          </div>
+        </div>
+
+      </section>
+    </div>
+
+    <!-- RIGHT PANEL: Physiological Dashboard & SOP Advisories -->
+    <aside class="card sidebar-card">
+      <div class="sidebar-header">
+        <div>
+          <h2 id="selected-ward-title">Ward W01 - Old Delhi (Chandni Chowk)</h2>
+          <span id="risk-band-pill" class="badge-pill bg-danger">Extreme Danger</span>
+        </div>
+        <div class="mode-tag" id="active-mode-tag">MODE A: FORECAST</div>
+      </div>
+
+      <!-- Demographic / Personal Profile Grid -->
+      <div class="demographics-grid">
+        <div class="demo-item">
+          <span class="demo-label" id="label-factor-1">Elderly (&gt;65):</span>
+          <strong id="w-elderly">14.5</strong><span id="unit-factor-1">%</span>
+        </div>
+        <div class="demo-item">
+          <span class="demo-label" id="label-factor-2">Outdoor Labor:</span>
+          <strong id="w-labor">42.0</strong><span id="unit-factor-2">%</span>
+        </div>
+        <div class="demo-item">
+          <span class="demo-label" id="label-factor-3">Green Cover (NDVI):</span>
+          <strong id="w-ndvi">0.12</strong><span id="unit-factor-3"></span>
+        </div>
+        <div class="demo-item">
+          <span class="demo-label" id="label-factor-4">Cohort Multiplier:</span>
+          <strong id="w-pop">1.77</strong><span id="unit-factor-4">x</span>
+        </div>
+      </div>
+
+      <!-- Core Thermal Stress KPIs -->
+      <div class="kpi-grid">
+        
+        <!-- Primary Index: Adjusted HTSI -->
+        <div class="kpi-box primary-kpi" id="kpi-card-htsi">
+          <div class="kpi-top">
+            <h3>Adjusted HTSI</h3>
+            <span class="formula-tag">Composite Normalization</span>
+          </div>
+          <p class="kpi-val" id="disp-htsi">--</p>
+          <small id="disp-htsi-sub">Physiological Stress Load (0 - 100)</small>
+          <div class="progress-bar-wrap">
+            <div class="progress-bar" id="htsi-meter" style="width: 0%;"></div>
+          </div>
+        </div>
+
+        <!-- Secondary Index: Mortality Risk Index (MRI) -->
+        <div class="kpi-box" id="kpi-card-mri">
+          <div class="kpi-top">
+            <h3>Mortality Index (MRI)</h3>
+            <span class="formula-tag">DLNM Poisson</span>
+          </div>
+          <p class="kpi-val" id="disp-mri">--</p>
+          <small>Scale 0 - 100 &bull; RR: <span id="disp-rr">1.0</span>x</small>
+          <div class="progress-bar-wrap">
+            <div class="progress-bar" id="mri-meter" style="width: 0%;"></div>
+          </div>
+        </div>
+
+        <!-- Standard Index 1: ISO 7243 WBGT -->
+        <div class="kpi-box">
+          <div class="kpi-top">
+            <h3 id="label-wbgt">Outdoor WBGT</h3>
+            <span class="formula-tag">ISO 7243</span>
+          </div>
+          <p class="kpi-val" id="disp-wbgt">--</p>
+          <small>Tw: <span id="disp-tw">--</span>°C | Tg: <span id="disp-tg">--</span>°C</small>
+        </div>
+
+        <!-- Standard Index 2: Attributable Excess Cases -->
+        <div class="kpi-box alert-kpi">
+          <div class="kpi-top">
+            <h3>Excess Admissions</h3>
+            <span class="formula-tag">Poisson Attribution</span>
+          </div>
+          <p class="kpi-val" id="disp-cases">--</p>
+          <small>Attributable daily ER surge</small>
+        </div>
+
+        <!-- Clinical: Estimated Core Temp -->
+        <div class="kpi-box clinical-kpi kpi-box-full">
+          <div class="kpi-top">
+            <h3>Estimated Core Temp (Tcore)</h3>
+            <span class="formula-tag">Heat Storage</span>
+          </div>
+          <p class="kpi-val" id="sim-core-temp">37.1 °C</p>
+          <small id="sim-core-status">Safe Baseline</small>
+        </div>
+
+        <!-- Biometeorological Indices Row -->
+        <div class="kpi-box sub-kpi">
+          <div class="kpi-top">
+            <h3>UTCI 6th-Order</h3>
+            <span class="formula-tag">Bröde et al.</span>
+          </div>
+          <p class="kpi-val" id="disp-utci">--</p>
+          <small>Universal Thermal Climate</small>
+        </div>
+
+        <div class="kpi-box sub-kpi">
+          <div class="kpi-top">
+            <h3>NOAA Heat Index</h3>
+            <span class="formula-tag">Rothfusz Poly</span>
+          </div>
+          <p class="kpi-val" id="disp-hi">--</p>
+          <small>Apparent temperature (°C)</small>
+        </div>
+
+      </div>
+
+      <!-- Safe Exposure Window & Cardiovascular Strain Card -->
+      <div class="cardio-status-card" id="cardio-status-panel">
+        <div class="cardio-row">
+          <span class="icon">&#9201;</span>
+          <div>
+            <strong>Recommended Safe Exposure Window:</strong>
+            <p id="disp-safe-window">Assessing continuous thermal threshold...</p>
+          </div>
+        </div>
+        <div class="cardio-row" style="margin-top: 8px;">
+          <span class="icon">&#10084;</span>
+          <div>
+            <strong>Cardiovascular &amp; Thermoregulatory Strain:</strong>
+            <p id="disp-cardio-strain">Evaluating hemodynamic vasodilation load...</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Normalized HTSI Multi-Factor Component Breakdown -->
+      <div class="breakdown-box">
+        <h4>HTSI Threshold Normalization Contributions</h4>
+        <div class="contrib-row">
+          <span>WBGT Component (40% weight):</span>
+          <strong id="val-s-wbgt">--</strong>
+        </div>
+        <div class="contrib-row">
+          <span>UTCI Component (30% weight):</span>
+          <strong id="val-s-utci">--</strong>
+        </div>
+        <div class="contrib-row">
+          <span>Heat Index Component (20% weight):</span>
+          <strong id="val-s-hi">--</strong>
+        </div>
+        <div class="contrib-row">
+          <span>Exposure Duration (10% weight):</span>
+          <strong id="val-s-dur">--</strong>
+        </div>
+      </div>
+
+      <!-- Actionable SOP Advisory Box -->
+      <div class="advisory-box" id="advisory-card">
+        <div class="advisory-header">
+          <span class="icon">&#128227;</span>
+          <h3>Mandatory Public Health SOP &amp; Protocol</h3>
+        </div>
+        <p id="disp-advisory">Awaiting computational pipeline initialization...</p>
+        <div class="action-checkpoints" id="advisory-checkpoints">
+          <!-- Dynamically populated checklist items -->
+        </div>
+      </div>
+
+    </aside>
+
+  </main>
+
+  <!-- Emergency Alert Modal -->
+  <div id="alert-modal" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content card">
+      <div class="modal-header">
+        <h3>&#9888; Municipal Emergency Heatwave Broadcast</h3>
+        <button id="modal-close-btn" class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p id="modal-desc">Triggering instant emergency dispatch for the selected ward.</p>
+        <div class="modal-details">
+          <div><strong>Target Ward / Area:</strong> <span id="modal-ward-name">--</span></div>
+          <div><strong>Calculated HTSI:</strong> <span id="modal-htsi-val">--</span></div>
+          <div><strong>Advisory Level:</strong> <span id="modal-band-val">--</span></div>
+          <div><strong>Broadcast Gateways:</strong> WhatsApp Automated Dispatch, SMS Bulk Broadcast, DDMA GIS Feeds</div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="modal-cancel-btn" class="btn-secondary">Cancel</button>
+        <button id="modal-confirm-dispatch-btn" class="btn-alert">Confirm Emergency Dispatch</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Leaflet JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/map.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
